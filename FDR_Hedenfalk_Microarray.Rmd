@@ -1,0 +1,174 @@
+---
+title: "False-Discovery Rates with the Hedenfalk et al. (2001) Microarray Data"
+author: "Sara Hussin"
+date: "November 20, 2024"
+output:
+  html_document:
+    highlight: tango
+    number_sections: yes
+    theme: united
+    toc: yes
+  pdf_document:
+    number_sections: yes
+    toc: yes
+  word_document:
+    toc: yes
+editor_options:
+  chunk_output_type: inline
+urlcolor: blue
+linkcolor: red
+---
+
+# Setup
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Ensure that the following packages are installed: `knitr`, `FDRestimation`, `lemon`, `BiocManager`, and `qvalue`. Note that `qvalue` must be installed directly via `BiocManager`.
+
+```{r}
+if (!require("qvalue", quietly = TRUE))
+    BiocManager::install('qvalue')
+```
+
+# Introduction to this Project
+
+The goal of this project is to provide hands-on experience in performing genome-wide analyses of differentially expressed genes (DEGs) using permutation distributions and the False Discovery Rate (FDR).
+
+In this project, we reproduce key results from [Storey and Tibshirani (2003)](https://www.pnas.org/content/100/16/9440), leveraging the `FDRestimation` package by Megan H. Murray and Jeffrey D. Blume, as described in [FDRestimation: Flexible False Discovery Rate Computation in R](https://f1000research.com/articles/10-441/v2). Instead of calculating permutation $t$-tests directly, we utilize precomputed permutation-$t$ statistics from John Storey’s `qvalue` package for efficiency.
+
+The project involves replicating several of Storey and Tibshirani's findings and exploring the impact of different statistical assumptions. A primary objective is to demonstrate that the permutation $p$-value approach, as used by Storey and Tibshirani, detects more significant genes compared to the parametric $p$-values obtained from the base R `t.test` function. The reliance on parametric $p$-values not only violates underlying assumptions but also proves less effective in identifying differential expression in this dataset.
+
+# Download and Load Hedenfalk (2001) Microarray Gene Expression Data
+
+## Background
+
+As usual for a decades-old paper, it is non-trivial to find the microarray data that [Storey and Tibshirani (2003)](https://www.pnas.org/content/100/16/9440) analyzed from [Hedenfalk *et al.* (2001). Gene-Expression Profiles in Hereditary Breast Cancer. *N Engl J Med 2001* **344**:539-548 ](https://www.nejm.org/doi/full/10.1056/NEJM200102223440801). 
+
+## Code
+
+**Note that the data used in this analysis have already been preprocessed in accordance with Storey and Tibshirani's methods. Specifically, any gene with an expression ratio $\ge 20$ in any of the three original groups has been removed. Additionally, the data have been log-transformed and standardized, with each numeric column centered to its mean and scaled by its standard deviation, following recommendations by Efron and Tibshirani for this dataset.**
+
+```{r load}
+load("~/Desktop/hedenfalk_log_scaled.RData")
+```
+
+# Compute *t*-Statistics and Their Parametric *p*-values for this Data
+
+## Background
+
+The base R function `t.test` computes, by default, Welch's Approximate $t$-test for two groups with unequal variances, as this is recommended in general practice.
+
+## Code
+
+```{r t-test}
+hedenfalk_log_scaled$t   <- apply(hedenfalk_log_scaled[,4:18],1,function(x)t.test(unlist(x[1:7]),unlist(x[8:15]))$statistic)
+hedenfalk_log_scaled$t.p <- apply(hedenfalk_log_scaled[,4:18],1,function(x)t.test(unlist(x[1:7]),unlist(x[8:15]))$p.value)
+```
+
+# Compute Permutation *p*-values for *t*-Statistics
+
+## Background
+
+The `perm` library is a valuable tool for computing permutation tests and $p$-values for various statistics. To streamline the process and ensure comparability with the results of Storey and Tibshirani (2003), we will utilize precomputed permutation $t$-statistics provided in John Storey’s `qvalue` package.
+
+Following the methodology outlined by Storey and Tibshirani, we will compare the $t$-statistics we previously computed for each gene against the 100 randomly permuted $t$-statistics precomputed for all 3,170 genes in the dataset. Since Storey and Tibshirani calculated two-sided $p$-values, we will compare the absolute values of each gene's $t$-statistic to the absolute values of the permutation $t$-statistics. This approach ensures consistency with their original analysis.
+
+## Code
+
+```{r}
+library(qvalue)
+data(hedenfalk)
+numperms <- 3171*100
+hedenfalk_log_scaled$t_perm.p <- sapply(hedenfalk_log_scaled$t,function(x)sum(abs(as.vector(hedenfalk$stat0)) >= abs(x))/numperms)
+```
+
+# Compute Wilcoxon Statistics to compare the BRCA1 and BRCA2 groups to compare power against $t$-statistics
+
+## Background
+
+Efron and Tibshirani analyzed the Hedenfalk data using the Wilcoxon statistic, which represents the sum of ranks for one of the groups, compared against a permutation distribution (equivalent to the Mann-Whitney test but employing a different statistic). To enable comparison of results, particularly with False Discovery Rates (FDR), we will also compute the Wilcoxon statistics and their corresponding $p$-values.
+
+Fortunately, the `wilcox.test` function has the same interface as `t.test`, making it straightforward to adapt existing code to perform this alternative test. With functional code for the $t$-test in place, implementing the Wilcoxon test requires only minimal modification.
+
+## Code
+
+```{r}
+hedenfalk_log_scaled$wilcox.p <- apply(hedenfalk_log_scaled[,4:18],1,function(x)wilcox.test(unlist(x[1:7]),unlist(x[8:15]))$p.value)
+```
+
+# Compute False Discovery Rates for Different $p$-values and Find More or Less Numbers of Differentially Expressed Genes Under Different Methods of Computing $p$-values
+
+## Background
+
+In Murray and Blume's `FDRestimation` package described in [FDRestimation: Flexible False Discovery Rate Computation in R](https://f1000research.com/articles/10-441/v2) and its article in F1000, the authors invert Benjamini and Hochberg's FDR method to compute individual FDRs for each $p$-value. The FDR-values that they recommend using to filter for interesting genes are contained in the `fdrs` element of the return object of the `p.val` function.
+
+## Code
+
+```{r perms, warning=FALSE}
+library(FDRestimation)
+p.fdr.obj <- p.fdr(p=hedenfalk_log_scaled$t.p)
+hedenfalk_log_scaled$t.p.fdrs <- p.fdr.obj$fdrs
+plot(p.fdr.obj, main="FDR Statistics for Hedenfalk Data and Welch-Satterthwaite Parametric p-values")
+```
+
+Now, we compute FDRs for the permutation-based $p$-values and for the Wilcoxon-statistic $p$-values.
+
+```{r, warning=FALSE}
+p.fdr.obj <- p.fdr(p=hedenfalk_log_scaled$t_perm.p)
+hedenfalk_log_scaled$t_perm.p.fdrs <- p.fdr.obj$fdrs
+plot(p.fdr.obj, main="FDR Statistics for Hedenfalk Data and Permutation p-values")
+p.fdr.obj <- p.fdr(p=hedenfalk_log_scaled$wilcox.p)
+hedenfalk_log_scaled$wilcox.p.fdrs <- p.fdr.obj$fdrs
+plot(p.fdr.obj, main="FDR Statistics for Hedenfalk Data and Wilcoxon p-values")
+```
+
+# Compare Numbers of Interesting Genes by FDR for Different $p$-values
+
+How many genes are significant using parametric *p*-values and an FDR of 5\%? Let's find out.
+
+```{r}
+answer <- sum(hedenfalk_log_scaled$t.p.fdrs <= 0.05)
+print(answer)
+```
+
+Now let's check results with the Wilcoxon statistic:
+
+```{r}
+answer <- sum(hedenfalk_log_scaled$wilcox.p.fdrs <= 0.05)
+print(answer)
+```
+
+Do we get more or fewer genes at this FDR threshold with permutation *p*-values than with the other two? 
+
+```{r}
+answer <- sum(hedenfalk_log_scaled$t_perm.p.fdrs <= 0.05)
+print(answer)
+```
+
+Is this the same as, more or fewer than the number found significant by Storey and Tibshirani at FDR 5%? Check page 9443, second column, second from last paragraph to see how many DEGs they found. What could explain the difference we are observing? Storey and Tibshirani took into account an estimate of "null" genes -- they estimated about 0.67. We will provide this number in the `set.pi0` argument to `p.fdr`:
+
+```{r, warning=FALSE}
+p.fdr.obj <- p.fdr(p=hedenfalk_log_scaled$t_perm.p,set.pi0 = 0.67)
+answer <- sum(p.fdr.obj$fdrs <= 0.05)
+print(answer)
+plot(p.fdr.obj, main="FDR Statistics for Hedenfalk Data, Permutation p-values and Estimated 67% Fraction of Truly Null-Effect Genes")
+```
+
+# Printing the "Interesting" Genes Sorted by their FDRs
+
+We will print the first three columns of `hedenfalk_log_scaled` for the rows that have permutation-$t$ FDR less than or equal to set 0.02 <span style="color:blue">(computed with estimated null proportion (NDEG fraction) of 67%).</span>.
+
+```{r, warning=FALSE}
+p.fdr.obj <- p.fdr(p=hedenfalk_log_scaled$t_perm.p,set.pi0 = 0.67)
+hedenfalk_log_scaled$t_perm.p.fdrs.67 <- p.fdr.obj$fdrs
+answer <- hedenfalk_log_scaled[hedenfalk_log_scaled$t_perm.p.fdrs.67 <= 0.02, 1:3]
+print(answer)
+```
+
+# Conclusions
+
+This project provided valuable experience in conducting $t$-tests in R using the `t.test()` and `wilcox.test()` functions. We were also introduced to powerful libraries, such as `qvalue` and `FDRestimation`, which will be instrumental for future statistical analyses. Notably, this was our first experience working with microarray data and identifying differentially expressed genes (DEGs). Successfully applying these methods independently was a significant achievement.
+
+The concept of false discovery rates (FDR) presented a novel mathematical challenge, but implementing FDR computations in R helped solidify our understanding. We compared the number of DEGs identified under different methods of computing $p$-values, including the $t$-test, Wilcox test, and permutation methods. Our results showed that the $t$-test and Wilcox test yielded similar numbers of DEGs, while the permutation method identified the highest number. Additionally, incorporating an estimate of null genes further increased the number of DEGs identified. These findings highlight the importance of the statistical approach in DEG analysis and its impact on results.
