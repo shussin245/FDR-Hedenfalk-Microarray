@@ -1,4 +1,4 @@
-# False-Discovery Rates with the Hedenfalk et al. (2001) Microarray Data
+# False Discovery Rates with the Hedenfalk et al. (2001) Microarray Data
 
 ## Project Overview
 
