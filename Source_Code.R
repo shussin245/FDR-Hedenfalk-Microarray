@@ -1,7 +1,7 @@
 if (!require("qvalue", quietly = TRUE))
   BiocManager::install('qvalue')
 
-load("~/hedenfalk_log_scaled.RData")
+load("hedenfalk_log_scaled.RData")
 
 hedenfalk_log_scaled$t   <- apply(hedenfalk_log_scaled[,4:18],1,function(x)t.test(unlist(x[1:7]),unlist(x[8:15]))$statistic)
 hedenfalk_log_scaled$t.p <- apply(hedenfalk_log_scaled[,4:18],1,function(x)t.test(unlist(x[1:7]),unlist(x[8:15]))$p.value)
