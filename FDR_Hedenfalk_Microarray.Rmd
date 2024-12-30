@@ -3,13 +3,13 @@ title: "False-Discovery Rates with the Hedenfalk et al. (2001) Microarray Data"
 author: "Sara Hussin"
 date: "November 20, 2024"
 output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
   html_document:
     highlight: tango
     number_sections: yes
     theme: united
-    toc: yes
-  pdf_document:
-    number_sections: yes
     toc: yes
   word_document:
     toc: yes
@@ -51,7 +51,7 @@ As usual for a decades-old paper, it is non-trivial to find the microarray data 
 **Note that the data used in this analysis have already been preprocessed in accordance with Storey and Tibshirani's methods. Specifically, any gene with an expression ratio $\ge 20$ in any of the three original groups has been removed. Additionally, the data have been log-transformed and standardized, with each numeric column centered to its mean and scaled by its standard deviation, following recommendations by Efron and Tibshirani for this dataset.**
 
 ```{r load}
-load("~/hedenfalk_log_scaled.RData")
+load("hedenfalk_log_scaled.RData")
 ```
 
 # Compute *t*-Statistics and Their Parametric *p*-values for this Data
